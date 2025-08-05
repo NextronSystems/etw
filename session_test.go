@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -322,4 +323,80 @@ func (s sessionSuite) generateEvents(ctx context.Context, levels []msetw.Level, 
 			}
 		}
 	}
+}
+
+// TestEventClone ensures that we can clone an event and get the same properties.
+func (s *sessionSuite) TestEventClone() {
+	const deadline = 20 * time.Second
+
+	go s.generateEvents(
+		s.ctx,
+		[]msetw.Level{msetw.LevelInfo},
+		msetw.StringField("string", "string value"),
+		msetw.StringArray("stringArray", []string{"1", "2", "3"}),
+		msetw.Float64Field("float64", 45.7),
+		msetw.Struct("struct",
+			msetw.StringField("string", "string value"),
+			msetw.Float64Field("float64", 46.7),
+			msetw.Struct("subStructure",
+				msetw.StringField("string", "string value"),
+			),
+		),
+		msetw.StringArray("anotherArray", []string{"3", "4"}),
+	)
+	expectedMap := map[string]interface{}{
+		"string":            "string value",
+		"stringArray.Count": "3", // OS artifacts
+		"stringArray":       []interface{}{"1", "2", "3"},
+		"float64":           "45.700000",
+		"struct": map[string]interface{}{
+			"string": "string value",
+
+			"float64": "46.700000",
+			"subStructure": map[string]interface{}{
+				"string": "string value",
+			},
+		},
+		"anotherArray.Count": "2", // OS artifacts
+		"anotherArray":       []interface{}{"3", "4"},
+	}
+
+	session, err := etw.NewSession()
+	s.Require().NoError(err, "Failed to create a session")
+	defer session.Close()
+	err = session.AddProvider(s.guid, etw.WithLevel(etw.TRACE_LEVEL_VERBOSE))
+	s.Require().NoError(err, "Failed to add provider")
+
+	var (
+		properties map[string]interface{}
+		gotProps   = make(chan struct{}, 1)
+	)
+	var workerWg sync.WaitGroup
+	workerWg.Add(1)
+	var events = make(chan *etw.Event, 1)
+	go func() {
+		defer workerWg.Done()
+		for e := range events {
+			properties, err = e.EventProperties()
+			s.Require().NoError(err, "Got error parsing event properties")
+			s.trySignal(gotProps)
+		}
+	}()
+
+	done := make(chan struct{})
+	go func() {
+		s.Require().NoError(session.Process(func(e *etw.Event) {
+			select {
+			case events <- e.Clone():
+			default:
+			}
+		}), "Error processing events")
+		close(done)
+	}()
+
+	s.waitForSignal(gotProps, deadline, "Failed to get event")
+	s.Equal(expectedMap, properties, "Received unexpected properties")
+
+	s.Require().NoError(session.Close(), "Failed to close session properly")
+	s.waitForSignal(done, deadline, "Failed to stop event processing")
 }

@@ -47,7 +47,7 @@ type eventRecordCommon struct {
 	ExtendedDataCount uint16
 	UserDataLength    uint16
 	ExtendedData      *[anysizeArray]eventHeaderExtendedDataItem
-	UserData          unsafe.Pointer
+	UserData          *byte
 	UserContext       uintptr
 }
 

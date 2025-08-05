@@ -61,6 +61,36 @@ func (h EventHeader) HasCPUTime() bool {
 	}
 }
 
+// Clone creates a copy of the Event. The copy is not linked to the original
+// event record and can be used outside the EventCallback.
+func (e *Event) Clone() *Event {
+	recordClone := *e.eventRecord
+	// Deep clone the pointers in the event record (extended data, user data)
+
+	var extendedDataItems = make([]eventHeaderExtendedDataItem, e.eventRecord.ExtendedDataCount)
+	for i := 0; i < int(e.eventRecord.ExtendedDataCount); i++ {
+		// Clone the extended data items to avoid modifying the original event record
+		extendedDataItem := e.eventRecord.ExtendedData[i]
+		var extendedDataClone = make([]byte, extendedDataItem.DataSize)
+		copy(extendedDataClone, unsafe.Slice((*byte)(extendedDataItem.DataPtr), extendedDataItem.DataSize))
+		extendedDataItems[i] = eventHeaderExtendedDataItem{
+			ExtType:  extendedDataItem.ExtType,
+			DataSize: extendedDataItem.DataSize,
+			DataPtr:  unsafe.Pointer(unsafe.SliceData(extendedDataClone)),
+		}
+	}
+	recordClone.ExtendedData = (*[anysizeArray]eventHeaderExtendedDataItem)(unsafe.Pointer(&extendedDataItems[0]))
+
+	eventData := unsafe.Slice(e.eventRecord.UserData, e.eventRecord.UserDataLength)
+	var userDataClone = make([]byte, len(eventData))
+	copy(userDataClone, eventData)
+	recordClone.UserData = unsafe.SliceData(userDataClone)
+
+	clone := *e
+	clone.eventRecord = &recordClone
+	return &clone
+}
+
 // UserData returns the payload of the event as a raw slice.
 // This data usually needs interpretation, as EventProperties does, to map
 // it to single events. However, if for an event the data layout is already
@@ -68,7 +98,7 @@ func (h EventHeader) HasCPUTime() bool {
 // UserData gives a slice that points directly at the data returned by the API.
 // It should not be modified or used after the ETW callback has returned.
 func (e *Event) UserData() []byte {
-	return unsafe.Slice((*uint8)(e.eventRecord.UserData), e.eventRecord.UserDataLength)
+	return unsafe.Slice(e.eventRecord.UserData, e.eventRecord.UserDataLength)
 }
 
 // EventProperties returns a map that represents events-specific data provided
@@ -118,8 +148,8 @@ func (e *Event) EventProperties() (map[string]interface{}, error) {
 	return properties, nil
 }
 
-func zeroTerminatedPointerToString(ptr unsafe.Pointer, length int) string {
-	array := (*[anysizeArray]uint8)(ptr)[:length]
+func zeroTerminatedPointerToString(ptr *byte, length int) string {
+	array := unsafe.Slice(ptr, length)
 	var zeroIndex int
 	for zeroIndex < len(array) && array[zeroIndex] != 0 {
 		zeroIndex++
@@ -272,7 +302,7 @@ func newPropertyParser(r *eventRecordC, ignoreMapInfo bool) (*propertyParser, er
 		info:          info,
 		infoBuffer:    infoBuffer,
 		ptrSize:       ptrSize,
-		data:          unsafe.Slice((*uint8)(r.UserData), r.UserDataLength),
+		data:          unsafe.Slice(r.UserData, r.UserDataLength),
 		ignoreMapInfo: ignoreMapInfo,
 		parseBuffer:   dataBufferPool.Get().([]byte),
 	}, nil
@@ -610,8 +640,8 @@ const (
 	TdhOuttypeIpv6  = 24
 )
 
-//sys tdhGetEventInformation(event *eventRecordC, contextCount uint32, context unsafe.Pointer, buffer *uint8, bufferSize *uint32) (ret error) = tdh.TdhGetEventInformation
-//sys tdhGetPropertySize(event *eventRecordC, contextCount uint32, context unsafe.Pointer, propertyDataCount uint32, propertyData *propertyDataDescriptor, propertySize *uint32) (ret error) = tdh.TdhGetPropertySize
-//sys tdhGetProperty(event *eventRecordC, contextCount uint32, context unsafe.Pointer, propertyDataCount uint32, propertyData *propertyDataDescriptor, bufferSize uint32, buffer unsafe.Pointer) (ret error) = tdh.TdhGetProperty
-//sys tdhGetEventMapInformation(event *eventRecordC, mapName *uint16, buffer *uint8, bufferSize *uint32) (ret error) = tdh.TdhGetEventMapInformation
-//sys tdhFormatProperty(event *eventRecordC, mapInfo *uint8, pointerSize uint32, inType uint16, outType uint16, propertyLength uint16, userDataLength uint16, userData *uint8, bufferSize *uint32, buffer *uint8, userDataConsumed *uint16) (ret error) = tdh.TdhFormatProperty
+// sys tdhGetEventInformation(event *eventRecordC, contextCount uint32, context unsafe.Pointer, buffer *uint8, bufferSize *uint32) (ret error) = tdh.TdhGetEventInformation
+// sys tdhGetPropertySize(event *eventRecordC, contextCount uint32, context unsafe.Pointer, propertyDataCount uint32, propertyData *propertyDataDescriptor, propertySize *uint32) (ret error) = tdh.TdhGetPropertySize
+// sys tdhGetProperty(event *eventRecordC, contextCount uint32, context unsafe.Pointer, propertyDataCount uint32, propertyData *propertyDataDescriptor, bufferSize uint32, buffer unsafe.Pointer) (ret error) = tdh.TdhGetProperty
+// sys tdhGetEventMapInformation(event *eventRecordC, mapName *uint16, buffer *uint8, bufferSize *uint32) (ret error) = tdh.TdhGetEventMapInformation
+// sys tdhFormatProperty(event *eventRecordC, mapInfo *uint8, pointerSize uint32, inType uint16, outType uint16, propertyLength uint16, userDataLength uint16, userData *uint8, bufferSize *uint32, buffer *uint8, userDataConsumed *uint16) (ret error) = tdh.TdhFormatProperty

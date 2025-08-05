@@ -1,6 +1,6 @@
 module github.com/secDre4mer/etw
 
-go 1.17
+go 1.20
 
 require (
 	github.com/Microsoft/go-winio v0.4.14
