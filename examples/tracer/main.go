@@ -15,7 +15,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"github.com/secDre4mer/etw"
+	"github.com/NextronSystems/etw"
 )
 
 func main() {

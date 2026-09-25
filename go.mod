@@ -1,4 +1,4 @@
-module github.com/secDre4mer/etw
+module github.com/NextronSystems/etw
 
 go 1.17
 
