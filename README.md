@@ -93,3 +93,22 @@ More sophisticated examples can be found in [examples](./examples) folder.
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
 
 Please make sure to update tests as appropriate.
+
+## Flush timer
+
+A real-time session hands events to the consumer when a buffer fills up or when the session flush timer fires. With the default (`FlushTimer = 0`), a quiet provider reaches the callback 1 to 2 seconds after the event happened. `WithFlushTimer` sets `EVENT_TRACE_PROPERTIES.FlushTimer`: a whole number of seconds is passed as is; any other value is passed in milliseconds together with `EVENT_TRACE_USE_MS_FLUSH_TIMER` (Windows 8 and later). Without the option nothing changes.
+
+```go
+session, err := etw.NewSession(etw.WithFlushTimer(100 * time.Millisecond))
+```
+
+Measured on Windows 11 build 28000 with `Microsoft-Windows-Kernel-Process` (keyword `0x10`), from `CreateProcess` returning to the callback seeing the start event:
+
+| Load | Flush timer | Average | Max | Lost events |
+| --- | --- | --- | --- | --- |
+| one process every 700 ms | default | 1.74 s | 2.31 s | 0 |
+| one process every 700 ms | 100 ms | 0.22 s | 0.23 s | 0 |
+| 200 processes back to back | default | 2.12 s | 2.69 s | 0 |
+| 200 processes back to back | 100 ms | 0.19 s | 0.30 s | 0 |
+
+A shorter timer means more and smaller buffer flushes, so the consumer wakes up more often.

@@ -3,6 +3,8 @@
 
 package etw
 
+import "time"
+
 // SessionOptions describes Session subscription options.
 //
 // Most of options will be passed to EnableTraceEx2 and could be refined in
@@ -27,6 +29,8 @@ type SessionOptions struct {
 
 	// Maximum size of the file used to buffer events, in MB
 	MaximumFileSize uint32
+
+	FlushTimer time.Duration
 }
 
 // SessionOption is any function that modifies SessionOptions. Options will be called
@@ -48,6 +52,12 @@ func WithName(name string) SessionOption {
 func WithMaximumFileSize(maximumFileSize uint32) SessionOption {
 	return func(cfg *SessionOptions) {
 		cfg.MaximumFileSize = maximumFileSize
+	}
+}
+
+func WithFlushTimer(interval time.Duration) SessionOption {
+	return func(cfg *SessionOptions) {
+		cfg.FlushTimer = interval
 	}
 }
 

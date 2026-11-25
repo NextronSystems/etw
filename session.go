@@ -237,6 +237,8 @@ func (s *Session) generateTraceProperties(config SessionOptions) []byte {
 	}
 	// Mark that we are going to process events in real time using a callback.
 	logFileMode |= eventTraceRealTimeMode
+	flushTimer, flushMode := flushTimerProperties(config.FlushTimer)
+	logFileMode |= flushMode
 
 	// We need to allocate a sequential buffer for a structure and a session name
 	// which will be placed there by an API call (for the future calls).
@@ -260,6 +262,7 @@ func (s *Session) generateTraceProperties(config SessionOptions) []byte {
 	pProperties.MaximumFileSize = config.MaximumFileSize
 
 	pProperties.LogFileMode = logFileMode
+	pProperties.FlushTimer = flushTimer
 
 	var enableFlags uint32
 	for _, flag := range config.Flags {
@@ -356,6 +359,15 @@ func (s *Session) setEnableFlags(flags []EnableFlag) error {
 }
 
 type perfinfoGroupmask [8]uint32
+
+const eventTraceUseMsFlushTimer = 0x00000010
+
+func flushTimerProperties(interval time.Duration) (timer uint32, logFileMode uint32) {
+	if interval%time.Second == 0 {
+		return uint32(interval / time.Second), 0
+	}
+	return uint32(interval / time.Millisecond), eventTraceUseMsFlushTimer
+}
 
 func (s *Session) updateSessionProperties(config SessionOptions) error {
 	propertiesBuf := s.generateTraceProperties(config)
