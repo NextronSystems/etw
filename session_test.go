@@ -137,6 +137,40 @@ func (s *sessionSuite) TestUpdating() {
 	s.waitForSignal(done, deadline, "Failed to stop event processing")
 }
 
+func (s *sessionSuite) TestFlushTimerDeliversASingleEventQuickly() {
+	const deadline = 10 * time.Second
+
+	session, err := etw.NewSession(etw.WithFlushTimer(50 * time.Millisecond))
+	s.Require().NoError(err, "Failed to create session")
+	defer session.Close()
+	s.Require().NoError(session.AddProvider(s.guid), "Failed to add provider")
+
+	got := make(chan time.Time, 1)
+	done := make(chan struct{})
+	go func() {
+		s.Require().NoError(session.Process(func(_ *etw.Event) {
+			select {
+			case got <- time.Now():
+			default:
+			}
+		}), "Error processing events")
+		close(done)
+	}()
+
+	time.Sleep(time.Second)
+	sent := time.Now()
+	s.Require().NoError(s.provider.WriteEvent("FlushTimer", nil, nil), "Failed to write event")
+	select {
+	case at := <-got:
+		s.True(at.Sub(sent) < 500*time.Millisecond, "Event took %v with a 50 ms flush timer", at.Sub(sent))
+	case <-time.After(deadline):
+		s.Fail("Failed to receive event")
+	}
+
+	s.Require().NoError(session.Close(), "Failed to close session properly")
+	s.waitForSignal(done, deadline, "Failed to stop event processing")
+}
+
 // TestParsing ensures that etw.Session is able to parse events with all common field types.
 func (s *sessionSuite) TestParsing() {
 	const deadline = 20 * time.Second
